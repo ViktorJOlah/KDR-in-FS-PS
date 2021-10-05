@@ -1,0 +1,278 @@
+load_file("nrngui.hoc")
+
+
+create soma//, ax1, ais, ax2
+soma.diam = 20
+soma.L = 20
+/*
+ax1.L = 10
+ax1.diam = 1
+ais.L = 10
+ais.diam = 1
+ax2.L = 1000
+ax2.diam = 1
+
+#connect soma(0), ax1(1)
+#connect ax1(0), ais(1)
+#connect ais(0), ax2(1)
+*/
+forall { nseg = int((L/(0.1*lambda_f(5000))+.999)/2)*2 + 1  }
+
+
+access soma
+
+forall{
+	
+	insert pas
+	g_pas = 0.00031818182
+	Ra=150
+	cm=1
+	insert hh_mod
+	gl_hh_mod = 0
+	gnabar_hh_mod = 0.3
+	gkbar_hh_mod = 0
+	
+	gnabar_hh_mod = 0.3
+	gnabar_hh_mod *= 1.44
+	v_shift_na_hh_mod = 13
+	scale_na_act_hh_mod = 5
+	scale_na_inact_hh_mod = 8
+
+	insert kdr
+	gbar_kdr = 0.0504
+	vh2_kdr = -31
+	vh1_kdr = -5
+	acttauoffset_kdr = 25
+	acttauavg_kdr = 0.5
+	acttaupeak_kdr = 15
+	acttauwdt_kdr = 35
+	actsteep_kdr = 12
+	inactsteep_kdr = 10
+	
+	//insert na
+	
+	ena = 70
+	ek = -93
+}
+v_init = -70
+
+celsius = 31
+
+load_file("custominit.hoc")
+load_file("2.ses")
+//load_file("long.ses")
+
+
+
+objref vecrec, vecy101, vecderiv
+vecy101 = new Vector()
+vecderiv = new Vector()
+vecrec = new Vector()
+vecrec.record(&soma.v(0.5))
+
+
+start = 2/0.005
+
+proc going(){
+    vecy101.resize(0)
+
+	
+	run()
+    vecy101 = vecrec.cl()
+
+    ////////calculate stuff
+
+
+    vecderiv.deriv(vecy101, 0.005)
+	dvdtmax = vecderiv.max(int (start + (0.04 / 0.005)), int(start + (2.9 / 0.005)))
+	vecderiv.medfltr(20)
+    //dvdtmax = vecderiv.max(int(2.628/0.004), int(5.9/0.004))
+
+    peak = vecy101.max(int (start + (0.04 / 0.005)), int(start + (2.9 / 0.005)))
+    peakind = vecy101.max_ind(int (start + (0.04 / 0.005)), int(start + (2.9 / 0.005)))
+
+
+    for i=int (start + (0.04 / 0.005)), int(start + (2.9 / 0.005)){
+        if(vecderiv.x[i] > 50){
+            here1 = i
+            break
+        }
+    }
+
+    thresh = vecy101.x[here1]
+	
+	//thresh = -35
+
+    for i=(start + (0.04/0.005)),peakind{
+        if(vecy101.x[i] > ((peak-thresh)/2+thresh)){
+            hw1 = i
+            break
+        }
+    }
+
+    for i=peakind, vecy101.size()-1{
+        if(vecy101.x[i] < vecy101.x[hw1]){
+            hw2 = i
+            break
+        }
+    }
+
+    hw11 = (hw2-hw1)*0.005
+	
+	depolblock = 0
+
+    print gbar_kdr, vh1_kdr, vh2_kdr, acttauoffset_kdr, dvdtmax, peak, thresh, hw11, here1*0.005, dvdtmax, depolblock
+    //print gnabar_hh_mod, dvdtmax, peak, thresh, hw11, here1*0.005
+
+}
+
+objref apc
+apc = new APCount(0.5)
+
+proc shiftmin(){
+	vh1_kdr += $1
+	vh2_kdr += $1
+	acttauoffset_kdr += $1
+	//gbar_kdr *= 0.4
+	going()
+	//print IClamp[0].amp, $1, apc.n
+	//print gbar_kdr, $1, apc.n
+}
+
+
+
+proc shiftplus(){
+	vh1_kdr -= 20
+	vh2_kdr -= 20
+	acttauoffset_kdr -= 20
+	gbar_kdr /= 0.4
+	//going()
+}
+
+
+
+proc went(){
+	gbar_kdr = 0.0504
+	for first = 0, 10{
+		gbar_kdr -= (0.002016*2)
+		for second = 0, 10{
+			vh2_kdr = -5
+			vh1_kdr = 1.4
+			acttauoffset_kdr = 25
+			shiftmin(second*2)
+
+			//going()
+		}
+	}
+}
+
+proc went2(){
+	gbar_kdr *= 1.3
+	IClamp[0].amp = 0.4
+	for first = 0, 5{
+		for second = 0, 20{
+			vh2_kdr = -31
+			vh1_kdr = -5
+			acttauoffset_kdr = 25
+			shiftmin(second)
+			if (apc.n == 1){
+				break
+			}
+			//going()
+		}
+	IClamp[0].amp += 0.2
+	}
+}
+
+
+proc went3(){
+	IClamp[0].amp = 0.3
+	for first = 0, 8{
+		gbar_kdr = 0.0504
+		for second = 0, 20{
+			gbar_kdr -= 0.002016
+			going()
+			print IClamp[0].amp, gbar_kdr, apc.n
+			if (apc.n == 1){
+				break
+			}
+		}
+	IClamp[0].amp += 0.1
+	}
+}
+
+
+
+proc went4(){
+	IClamp[0].amp = 0.5
+	gbar_kdr = 0.0504
+	for first = 0, 20{
+		gbar_kdr -= 0.002016
+		for second = 0, 20{
+			vh2_kdr = -5
+			vh1_kdr = 1.4
+			acttauoffset_kdr = 25
+			shiftmin(second)
+			if (apc.n == 1){
+				break
+			}
+
+			//going()
+		}
+	}
+
+}
+
+proc went5(){
+
+	for i11=0,20{
+		shiftmin(-1)
+	}
+}
+
+proc went6(){
+	gbar_kdr = 0.0504
+	gnabar_hh_mod = 0.864
+	for i11=0,40{
+		gnabar_hh_mod -= 0.0216
+		going()
+	}
+}
+
+
+
+
+
+proc went10(){
+	for first = 0, 49{
+		acttauavg_kdr = 0.1+(first*0.1)
+		for second = 0, 40{
+			scale_na_inact_hh_mod = 4+(second*0.1)
+			going()
+			hw111 = hw11
+			forall{gbar_kdr *= 0.4}
+			shiftmin(20)
+			print hw111, hw11
+			shiftplus()
+	
+		}
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

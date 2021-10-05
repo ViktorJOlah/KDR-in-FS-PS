@@ -1,0 +1,29 @@
+objref rand1, syn_e[10000], syn_i[10000]
+rand1 = new Random()
+
+
+proc inp(){
+	excno = $1
+	inhno = $2
+	rand1.uniform(0,$3)
+	
+	
+	for i=0, excno{
+		
+		syn_e[i] = new AlphaSynapse(0.5)
+		syn_e[i].onset = rand1.repick()
+		syn_e[i].e = 0
+		syn_e[i].gmax = 0.01
+	}
+
+
+	for i=excno, excno + inhno{
+		syn_i[i] = new AlphaSynapse(0.5)
+		syn_i[i].onset = rand1.repick()
+		syn_i[i].e = -90
+		syn_i[i].gmax = 0.01
+	}
+
+}
+
+inp(1000,500,2000)
