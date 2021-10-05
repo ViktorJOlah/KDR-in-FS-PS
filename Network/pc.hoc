@@ -1,0 +1,137 @@
+begintemplate PCell			// template of a cell
+
+public  soma, old_v, drv, syn_exc,syn_inh,\
+			switch_syn, change_Imu, change_Gsyn, change_Tau2syn,\
+			pre_list, connect_pre_exc, connect_pre_inh, is_connected, disconnect_cell,\
+			connect_gap, disconnect_gaps
+
+external  	 Tau1syn,Tau2syn,Esyn,\
+			 Delsyn,Gsyn,\
+			 Imu,tstop
+
+objref syn_exc, syn_inh, drv, pre_list, net_c, gaps[8]
+
+create soma
+
+proc init() {
+   pre_list = new List()
+
+   soma { 
+		//geometry
+		diam = 20
+		L = 20
+		nseg = 1
+		f_surf = area(0.5)/100000
+		insert pas
+		g_pas = 0.0001
+		e_pas = -90
+		Ra=150
+		cm=10
+		v_init = -90
+		
+		insert hh_mod
+		
+		gnabar_hh_mod = 0.4
+		scale_na_act_hh_mod = 8
+		v_shift_na_hh_mod = 1
+		
+		insert km
+		gbar_km = 0.005
+		acthalf_km = 30
+		
+		insert Ca
+		gtcabar_Ca = 0.1
+		
+		
+		ena = 70
+		ek = -93
+
+		// postsynaptic current 
+		syn_exc = new Exp2Syn(0.5)
+		
+		syn_exc.tau1 = Tau1syn
+		syn_exc.tau2 = Tau2syn
+		syn_exc.e = Esyn
+		
+		// postsynaptic current 
+		syn_inh = new Exp2Syn(0.5)
+		
+		syn_inh.tau1 = Tau1syn
+		syn_inh.tau2 = Tau2syn
+		syn_inh.e = -90
+
+		// Use: IClamp for this purpuse
+		drv = new IClamp(0.5)
+
+		drv.del = 0
+		drv.dur = tstop
+		drv.amp = Imu*f_surf			
+
+		}
+
+   }
+ 
+
+
+
+proc connect_pre_exc() {local f, axdel
+// $o1 arg is the **PREsynaptic** Cell
+
+   axdel=$2*0.2        // in ms distance between cells 50 um
+                       // assuming AP propagation  .25 m/s => 0.2 ms for one interval
+				   
+
+   //$o1.soma pre_list.append( new NetCon(&v(1),syn_exc,0,Delsyn+axdel,0.00035))		//constrained
+   $o1.soma pre_list.append( new NetCon(&v(1),syn_exc,0,Delsyn+axdel,0.0012))		//constrained
+	// the last argument is the 'weight' initialized to 0
+	// a range of [0-1] where 1 corresponds to 1 ‘S peak 
+	// conversion: 'Gsyn' [mS/cmy] to 'weight' [‘S] using the factor 'fsurf' derived from the 
+	// surface area [‘my] and the conversion of the units
+}
+
+proc connect_pre_inh() {local f, axdel
+// $o1 arg is the **PREsynaptic** Cell
+
+   axdel=$2*0.2         
+
+   $o1.soma pre_list.append( new NetCon(&v(1),syn_inh,0,Delsyn+axdel,0.005))		//constrained
+}
+
+proc disconnect_cell() {
+   pre_list.remove_all()
+}
+
+
+func is_connected() {local i,c			// check if connected
+   c = 0
+   for i = 0,pre_list.count()-1 {
+		net_c = pre_list.object(i)		// get netCon object from list
+		if ($o1 == net_c.precell()) {c=1}
+   }
+   return c
+}   
+
+proc switch_syn() {local i			// activate syn.connections
+   for i = 0,pre_list.count()-1 {
+		net_c = pre_list.object(i)		// get netCon object from list
+		net_c.active($1)
+   }
+}   
+
+proc change_Tau2syn() {
+   if (numarg()<1) {
+		syn_exc.tau2 = Tau2syn
+   } else {
+		syn_exc.tau2 = $1
+   }
+}
+	
+proc change_Imu() {
+   if (numarg()<1) {
+		drv.amp = Imu*f_surf
+   } else {
+		drv.amp = $1*f_surf
+   }
+}
+
+endtemplate PCell

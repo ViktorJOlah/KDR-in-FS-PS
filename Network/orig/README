@@ -1,0 +1,63 @@
+This model is associated with the paper:
+
+Bartos M, Vida I, Frotscher M, Meyer A, Monyer H, Geiger JR, Jonas P (2002) 
+Fast synaptic inhibition promotes synchronized gamma oscillations in 
+hippocampal interneuron networks. 
+Proc Natl Acad Sci U S A 99:13222-7
+
+Abstract:
+Networks of GABAergic interneurons are of critical importance for
+the generation of gamma frequency oscillations in the brain. To
+examine the underlying synaptic mechanisms, we made paired
+recordings from basket cell (BCs) in different subfields of
+hippocampal slices, using transgenic mice that express enhanced
+green fluorescent protein (EGFP) under the control of the parvalbumin
+promoter. Unitary inhibitory postsynaptic currents (IPSCs)
+showed large amplitude and fast time course with mean amplitude weighted
+decay time constants of 2.5, 1.2, and 1.8 ms in the dentate
+gyrus, and the cornu ammonis area 3 (CA3) and 1 (CA1), respectively
+(33-34°C). The decay of unitary IPSCs at BC-BC synapses was
+significantly faster than that at BC-principal cell synapses, indicating
+target cell-specific differences in IPSC kinetics. In addition,
+electrical coupling was found in a subset of BC-BC pairs. To
+examine whether an interneuron network with fast inhibitory
+synapses can act as a gamma frequency oscillator, we developed an
+interneuron network model based on experimentally determined
+properties. In comparison to previous interneuron network models,
+our model was able to generate oscillatory activity with higher
+coherence over a broad range of frequencies (20-110 Hz). In this
+model, high coherence and flexibility in frequency control emerge
+from the combination of synaptic properties, network structure,
+and electrical coupling.
+
+Excerpt from the paper describing the network architecture:
+...
+A structured interneuron network was assembled from 200
+neurons arranged on the circumference of a ring with 50 um
+spacing, a simple representation that avoids edge effects. Each
+neuron was randomly connected to its 100 nearest neighbors by
+chemical synapses; the connection probability was given by a
+Gaussian function with a standard deviation of 24 cell-cell
+distances and an average connection probability of 0.57. This
+connectivity was consistent with published anatomical data (ref.
+29; see also ref. 12). The conduction time was calculated from the
+distance between pre- and postsynaptic cells along the circumference.
+... Furthermore, each neuron was randomly connected to its eight 
+nearest neighbors by electrical synapses with a connection 
+probability of 0.5.
+...
+
+see paper for more!
+
+The model files reproduce images similar to those in fig 3 (takes about 
+30 seconds on an 800 MHz IBM compatible). To generate fig 3A(B) set 
+Imu=1(5) in netring.hoc and run nrngui mosinit.hoc again.
+Note: to generate runs as similar to the paper as possible look at tstop 
+comment to change tstop and also change dt to 0.01 (as shown in netring.hoc).
+(will take longer to run).  The model uses a random number generator so that 
+the figures you generate will always be slightly different than the paper.
+
+To run the model auto-launch from ModelDB or download the zip file and extract
+and setup in the usual way for your Mac, PC, or Unix system.  This involves
+compiling the mechanisms with mknrndll (PC or MAC), or nrnivmodl (unix), and then
+run nrngui mosinit.hoc.

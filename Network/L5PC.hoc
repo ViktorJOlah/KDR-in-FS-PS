@@ -1,0 +1,342 @@
+
+load_file("nrngui.hoc")
+load_file("custominit.hoc") 
+
+celsius = 31	
+
+   npcell = 200
+   nfscell = 20
+   Msyn = 60 			// convergence & divergence factor
+   Msyn_r = 1			// 1 - assign connections in a true random fashion
+   				// 0 - assign connection with fixed Msyn
+   Gaps = 1			// gaps inserted as default 
+   
+   Imu = 0		// ‘A/cmy - amplitude here as a density
+   Icv = 0.1			// coeff.var. of the current distribution
+
+   Delsyn = 0.5			// ms	- IPSC delay
+			
+   Tau1syn = 0.16 		// ms	- IPSC rise tau
+   Tau2syn = 1.8		// ms	- IPSC decay tau
+
+   Esyn = 0			// mV	- IPSC rev. potential
+
+   Gsyn = 0.1 			// mS/cmy - IPSC conductance density! (per connection)
+   
+   Vrest = -70
+
+objref pcell[npcell]			// the cells of the network
+objref fscell[nfscell]			// the cells of the network
+
+load_file("pc.hoc")
+load_file("fs.hoc")
+
+
+
+
+/////////////////////////////////////////////////////////////	recreate f/I curves as compared to 2021_02_16_0026.abf from Matt  ////////////////////////////////////////////////////
+/*
+objref cell[1]
+
+cell[0] = new PCell()
+
+load_file("PC.ses")
+
+
+objref apc
+apc = new APCount(0.5)
+
+IClamp[0].amp = 0
+IClamp[0].dur = 300
+
+proc go(){
+	for i = 0, 12{
+		IClamp[1].amp = i * 0.136
+		run()
+		print apc.n
+	}
+}
+
+*/
+
+
+
+/*
+RESULT:
+Pa	recording	model firing freq
+0	0		0
+136	0		0
+272	6		8
+408	11		13
+544	14		15
+680	17		18
+816	19		19
+952	22		21
+1088	24		22
+1224	27		24
+1360	28		25
+1496	30		26
+1632	31		27
+*/
+
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+Msyn_r = 1
+
+for i = 0, (npcell-1) { 
+	pcell[i] = new PCell() }
+
+for i = 0, (nfscell-1) { 
+	fscell[i] = new FSCell() }
+
+
+load_file("dummy2.ses")
+
+tstop = 1000
+
+//pcell[1].connect_pre_exc(pcell[0],1)	//this connects cell[0] as pre to cell[1] as post
+
+
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+//recurrent PC-PC: 10% (2015 Markram Segev, )
+//recurrent reciprocal PC-PC: 5% (Perin Markram 2011)
+// PV to PC: 36% (Packer Yuste, 2011)
+// PV to PV: 78% (Galarreta Hestrin 2002)
+// PV to PV gap: 61% (Galarreta Hestrin 2002)
+// PC to PV????????????? 80% (data from visual cortex, Bock Nature 2011, Hofer Mrsic-Flogel 2011)
+//are these rat or mouse?
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+//recurrent pc connections are constrained to Hay Segev 2015 (0.6 mV)
+//pv to pc cell connections need to be less than a mV around resting (Packer Yuste, 2011)
+//pv to pv connections are constrained to Wang Buzsaki
+//pv to pv gap connections are constrained to Bartos 2002
+//pc to pv connections need to be around 1 mV (Hofer Mrsic-Flogel 2011)
+ 
+
+objref apc[npcell+nfscell], aprec[npcell+nfscell], pc_ic_amp, r1, r2, se[npcell+nfscell], r3
+objref randvec[npcell+nfscell+1]
+
+r1 = new Random()
+r2 = new Random()
+r3 = new Random()
+r1.uniform(-120, 10)
+r2.uniform(-120, 60)
+r3.uniform(0, 0.1)
+
+for i = 0, npcell+nfscell{
+	randvec[i] = new Vector()
+	
+}
+
+pc_ic_amp = new Random()
+pc_ic_amp.uniform(0.1,0.35)
+
+
+/////////////// 	this part optionally sets smoothed random noise as input 
+
+proc rand_stim(){
+	for i=0, (npcell+nfscell-1){
+		//print i
+		if (i < npcell){
+			access pcell[i].soma
+		}else{access fscell[i-npcell].soma}
+		se[i] = new SEClamp(.5)
+
+		
+		for k = 0, (tstop/dt/50){
+			if (i > npcell-1){
+				rep = r2.repick()
+				}else{rep = r1.repick()}
+			//print "repick: ", rep
+			randvec[i].append(rep)
+		}
+
+		randvec[i] = randvec[i].medfltr(100)
+
+		
+		se[i].dur1 = tstop
+		se[i].rs = 20
+		randvec[i].play(&se[i].amp1, dt*50)
+
+		apc[i] = new APCount(0.5)
+		aprec[i] = new Vector()
+		apc[i].record(aprec[i])
+	}	
+}
+
+//rand_stim()
+
+//////////////		this part sets constant current injection as input for all cells
+
+objref ic[220]
+
+
+proc ic_stim(){
+	for i=0, (npcell+nfscell-1){
+		//print i
+		if (i < npcell){
+			access pcell[i].soma
+		}else{access fscell[i-npcell].soma}
+		ic[i] = new IClamp(.5)
+
+		
+		for k = 0, (tstop/dt/50){
+			if (i > npcell-1){
+				rep = r2.repick()
+				}else{rep = r1.repick()}
+			//print "repick: ", rep
+			randvec[i].append(rep)
+		}
+
+		randvec[i] = randvec[i].medfltr(100)
+
+		
+		ic[i].dur = tstop
+		ic[i].del = 0
+		if (i < npcell){
+			ic[i].amp = 0.15 + r3.repick()*2
+		}else{ic[i].amp = 0.05 + r3.repick()}
+		
+
+		apc[i] = new APCount(0.5)
+		aprec[i] = new Vector()
+		apc[i].record(aprec[i])
+	}
+	print "IC[0].amp: ", ic[0].amp
+}
+
+//ic_stim()
+
+
+
+objref pc_2_pc, pv_2_pc, pv_2_pv, pv_2_pv_gap, pc_2_pv, m
+
+pc_2_pc = new Random()
+pv_2_pc = new Random()
+pv_2_pv = new Random()
+pv_2_pv_gap = new Random()
+pc_2_pv = new Random()
+
+pc_2_pc.uniform(0,1)
+pv_2_pc.uniform(0,1)
+pv_2_pv.uniform(0,1)
+pv_2_pv_gap.uniform(0,1)
+pc_2_pv.uniform(0,1)
+
+
+proc create_matrix(){
+	m = new Matrix()
+	m.resize(npcell, npcell)
+	for i = 0, (npcell-1){
+		for k = 0, (npcell-1){
+			if (i!=k && pc_2_pc.repick < 0.1){
+				m.setval(i, k, 1)
+				if (pc_2_pc.repick < 0.5){
+					m.setval(k, i, 1)
+				}
+			}
+		}
+	}
+}
+
+
+proc connect_pcs(){
+	create_matrix()
+	for i = 0, (npcell-1){
+		for k = 0, (npcell-1){
+			if (m.x[i][k] == 1){
+				pcell[i].connect_pre_exc(pcell[k],1)
+			}
+		}
+	}
+}
+
+proc connect_fs_gaps(){
+	for i = 0, (nfscell-1){
+		for k = 0, (nfscell-1){
+			if (i!=k && pv_2_pv_gap.repick < 0.61){
+				fscell[i].connect_gap(fscell[k],1)
+				fscell[k].connect_gap(fscell[i],1)
+			}
+		}
+	}
+}
+
+proc connect_pvs(){
+	for i = 0, (nfscell-1){
+		for k = 0, (nfscell-1){
+			if (i!=k && pv_2_pv.repick < 0.8){
+				fscell[i].connect_pre_inh(fscell[k],1)
+			}
+		}
+	}
+}
+
+
+proc connect_pcs_to_pvs(){
+	for i = 0, (nfscell-1){
+		for k = 0, (nfscell-1){
+			if (i!=k && pc_2_pc.repick < 0.8){
+				fscell[i].connect_pre_exc(pcell[k],1)
+			}
+		}
+	}
+}
+
+
+proc connect_pvs_to_pcs(){
+	for i = 0, (npcell-1){
+		for k = 0, (nfscell-1){
+			if (i!=k && pc_2_pc.repick < 0.36){
+				pcell[i].connect_pre_inh(fscell[k],1)
+			}
+		}
+	}
+}
+
+
+
+objref g, ivecs[npcell+nfscell], recvec[npcell+nfscell]
+g = new Graph()
+
+proc runandplot() {
+	ic_stim()
+	//g.exec_menu("Erase") // clear previous plot
+	for i = 0, (npcell+nfscell-1){
+		recvec[i] = new Vector()
+		if (i<npcell){
+			recvec[i].record(&pcell[i].soma.v(.5))
+		}else{recvec[i].record(&fscell[i-200].soma.v(.5))}
+	}
+	run()
+
+	for i = 0, (npcell+nfscell-1){
+		ivecs[i] = new Vector()
+		for k = 0, (aprec[i].size()-1){
+			ivecs[i].append(i)
+		}
+		aprec[i].plot(g, ivecs[i]) // plots vvec values vs. corresponding ivec values
+	}
+
+	g.exec_menu("View = plot") // optional--automatically rescale x and y axes
+}
+
+//connect_pcs()
+//connect_pvs()
+//connect_fs_gaps()
+//connect_pvs_to_pcs()
+//connect_pcs_to_pvs()
+//runandplot()
+
+
+
+
+
+

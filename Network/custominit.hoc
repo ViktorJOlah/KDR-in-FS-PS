@@ -1,0 +1,36 @@
+INITDUR = 300	//350
+tstop = 6
+
+forall { nseg = int((L/(0.1*lambda_f(5000))+.999)/2)*2 + 1  }
+
+v_init = -80
+
+//define pseudo-variables
+
+
+
+
+proc init() { local temp
+
+{dt = 0.05}
+  finitialize(v_init)
+  t = -2*INITDUR // jump to a time "before" 0
+  temp = cvode.active()
+  if (temp != 0) { // if cvode is on, turn it off
+    cvode.active(0)
+    {dt = 0.05}
+  }
+  while (t < -INITDUR) {
+    fadvance()
+  }
+  if (temp != 0) { cvode.active(1) } // turn cvode back on if necessary
+  t = 0
+  {dt = 0.005}
+  if (cvode.active()) {
+    cvode.re_init()
+  } else {
+    fcurrent()
+  }
+  frecord_init()
+  //if (fitID==1){print printer, gNa, gK, vsNa, vsK, scK, scNa, Rrest, ParmFitnessGui[0].pf.errval}
+}

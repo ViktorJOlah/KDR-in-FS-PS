@@ -1,0 +1,731 @@
+/* ####################################################################### */
+/* ######### net.hoc  ################################################### */
+/* ####################################################################### */
+/* hoc file for interneuron network simulation                                     
+   defines and initializes the network
+   
+  - at present a ring of 200 neurons
+  - simulation starts with a period without connections
+   to reach a really "disordered" pattern
+   
+  to run simulations - oneRun()
+		  
+/* ####################################################################### */
+/* use as a module in net.*.run                                           */ 
+/* ####################################################################### */
+load_file("nrngui.hoc") // this Neuron environment has additional graphical features...
+// load_file("noload.hoc")	// load Neuron environment without menus 
+			// this is neccessary for some object types 
+			// (eg. to initialize a CVode instance for NetCon objects)
+
+
+
+/* ----------------------------------------------------------------------- */
+/* Define global simulation ctrl params ---------------------------------- */ 
+/* ----------------------------------------------------------------------- */
+
+   celsius = 6.3	// C - temperature 
+// temperature has no real meaning in the simulations 
+// this is the def.temp in Neuron (HH. model)
+// timeconstants of m, h and n are adjusted directly in the mod file
+
+   t = 0          	// ms - simulation starts 
+   			// BUT synaptic connections are activeted only at t = 0
+   tdrv = 50		// ms - init period to randomize firing pattern		
+   tsyn = 150
+   tstop = 300+tsyn	// ms - simulation ends (change to 500+tsyn for paper spec)
+
+   // dt = 0.01      	// ms - simulation time step (=100kHz) for paper
+   dt = 0.1      	// ms - simulation time step (=10kHz) for ModelDB demo
+   t_step = 0.1		// ms - collecting data only @10kHz  
+   n_step = int(t_step/dt)	// should be 10 ;-) for paper , 2 for ModelDB demo
+
+
+/* ----------------------------------------------------------------------- */
+/* Define geometry of neurons --------------------------------------------- */ 
+
+   n_d = 5.6419			// ‘m - diam to give 100 ‘my surface
+   n_L = 5.6419			// ‘m - length
+   n_seg = 1			// single compartment
+// just for "easy" calculations
+// all conductanaces and currents are defined by density parameters
+
+/* ----------------------------------------------------------------------- */
+/* Define cable params ---------------------------------------------------- */ 
+
+   ARes = 100			// ohm cm	- axial resistance
+   MCap = 1.0			// ‘F/cmy	- membrane capacitance
+
+// MRes = 10000			// ohm cmy 	- membrane resistance 
+// defines a leakage cond. of 0.1 mS/cmy
+// this is built into the WB mod file 
+// it is here only for reference
+		
+
+/* HH conductances -------------------------------------------------------- 
+// these are built into the WB mod file 
+// and are here only for reference
+gNa = 0.035			// S/cmy	- HH Na+ conductance max.
+egNa = 55			// mV		- HH Na+ rev. pot.
+gK = 0.009			// S/cmy	- HH K+ conductance max.
+egK = -90			// mV		- HH K+ rev. pot.
+		
+----------------------------------------------------------------------- */
+
+   Vrest = -65			// mV		- resting potential  
+
+
+
+/* ####################################################################### */
+/* ### Network parameters ################################################ */
+/* ####################################################################### */
+
+// this section serves primarily as reference
+// for the names and meaning of the parameters
+// all these values - except for *ncell*!! -
+// can be changed by the calling hoc file
+// and oneRun() handles them properly
+
+/* ----------------------------------------------------------------------- */
+/* Define network size & connectivity pattern ---------------------------- */
+
+   ncell = 200			// number of neurons in the network
+				// to change this you need to restart net.hoc
+				// all other network params can be changed 
+
+   Msyn = 60 			// convergence & divergence factor
+   Msyn_r = 1			// 1 - assign connections in a true random fashion
+   				// 0 - assign connection with fixed Msyn
+
+   Gaps = 1			// gaps inserted as default 
+   
+/* ------------------------------------------------------------------------ */
+/* Define excitatory drive ------------------------------------------------ */
+//  using an IClamp object  (parameters: del - delay [ms], dur - duration [ms]
+//  and  amp - amplitude of the current pulse [‘A];
+//  timing will be set to del = 0, dur = tstop i.e. const current application)
+
+   Imu = 1			// ‘A/cmy - amplitude here as a density
+   Icv = 0.1			// coeff.var. of the current distribution
+// these density values should be converted for IClamp using
+// the surface area of the cells
+
+
+/* ----------------------------------------------------------------------- */
+/* Define IPSCs ---------------------------------------------------------- */
+//  using:
+//  - a Exp2Syn object (parameters: tau1 - rise and  tau2 - decay
+//    timeconstants [ms], e - reversal potantial [mV])
+//  - a NetCon object (parameters: threshold - will be set to 0 mV, 
+//    delay [ms] and weight - variable between 0 and 1 [1 corresponding to 1 ‘S])
+
+   Delsyn = 0.5			// ms	- IPSC delay
+			
+   Tau1syn = 0.16 		// ms	- IPSC rise tau
+   Tau2syn = 1.8		// ms	- IPSC decay tau
+
+   Esyn = -75			// mV	- IPSC rev. potential
+
+   Gsyn = 0.02 			// mS/cmy - IPSC conductance density! (per connection)
+// this density value should be converted using
+// the surface area of the cells
+
+/* ### End ############################################################### */
+/* ####################################################################### */
+/* ### Network parameters ################################################ */
+
+
+
+
+/* ####################################################################### */
+/* ----------------------------------------------------------------------- */
+/* Define the neurons  --------------------------------------------------- */ 
+/* ----------------------------------------------------------------------- */
+
+objref cell[ncell]			// the cells of the network
+
+begintemplate Cell			// template of a cell
+
+public  soma, old_v, drv, syn,\
+			switch_syn, change_Imu, change_Gsyn, change_Tau2syn,\
+			pre_list, connect_pre, is_connected, disconnect_cell,\
+			connect_gap, disconnect_gaps
+
+external n_d,n_L,n_seg,\
+			 ARes,MCap,Vrest,\
+			 Tau1syn,Tau2syn,Esyn,\
+			 Delsyn,Gsyn,\
+			 Imu,tstop
+
+objref syn, drv, pre_list, net_c, gaps[8]
+
+create soma
+
+proc init() {
+   pre_list = new List()
+
+   soma { 
+		//geometry
+		diam = n_d  L=n_L nseg=n_seg 
+		f_surf = area(0.5)/100000
+		
+		//cable params
+		Ra = ARes cm=MCap v=Vrest 
+		old_v = Vrest
+		
+
+		//modified HH conductances
+		insert hh_wbm
+
+		// postsynaptic current 
+		syn = new Exp2Syn(0.5)
+		
+		syn.tau1 = Tau1syn
+		syn.tau2 = Tau2syn
+		syn.e = Esyn
+
+		// Use: IClamp for this purpuse
+		drv = new IClamp(0.5)
+
+		drv.del = 0
+		drv.dur = tstop
+		drv.amp = Imu*f_surf	// nA
+		// excitatory curent injection -  the density param. 'Imu' [‘A/cmy]  should be converted 
+		// to the injected current 'amp' [nA] using the factor 'fsurf' derived from the 
+		// surface area [‘my] and the conversion of the units
+		
+		for i=0,7 { 
+	        // define all the "hemi"gaps that may be needed
+		// "link" inactive gaps  to the same soma so that dV=0 and there is no current flow 
+		// this is not really nice and clean way 
+		// but in view of Neuron's clumsy memory handling this seems to be the 
+		// best way to dynamically connect/disconnect gaps over hundreds of simulations
+	    
+		    gaps[i] = new gap(0.5) 
+		    gaps[i].r = 100000 // Mohm resistance corresponding to 0.01 nS conductance
+					// that correspondes to 1nS for a cells of ~10000 ‘my surface  
+					// order of magn. that was measured experimentally 
+					// ** 0.01 mS/cmy
+		  
+		    setpointer gaps[i].vgap,v(0.5)
+		}
+		n_gaps=0
+   }
+}   
+
+proc connect_gap() {
+// $o1 arg is the other Cell
+     n_gaps +=1
+    setpointer gaps[n_gaps-1].vgap, $o1.soma.v(0.5)
+}
+
+proc disconnect_gaps() {
+    for i=0,7 { 
+	setpointer gaps[i].vgap, soma.v(0.5)
+    } 	
+    n_gaps=0
+}
+
+proc connect_pre() {local f, axdel
+// $o1 arg is the **PREsynaptic** Cell
+
+   axdel=$2*0.2        // in ms distance between cells 50 um
+                       // assuming AP propagation  .25 m/s => 0.2 ms for one interval
+				   
+
+   $o1.soma pre_list.append( new NetCon(&v(1),syn,0,Delsyn+axdel,0))
+	// the last argument is the 'weight' initialized to 0
+	// a range of [0-1] where 1 corresponds to 1 ‘S peak 
+	// conversion: 'Gsyn' [mS/cmy] to 'weight' [‘S] using the factor 'fsurf' derived from the 
+	// surface area [‘my] and the conversion of the units
+}
+
+proc disconnect_cell() {
+   pre_list.remove_all()
+}
+
+
+func is_connected() {local i,c			// check if connected
+   c = 0
+   for i = 0,pre_list.count()-1 {
+		net_c = pre_list.object(i)		// get netCon object from list
+		if ($o1 == net_c.precell()) {c=1}
+   }
+   return c
+}   
+
+proc switch_syn() {local i			// activate syn.connections
+   for i = 0,pre_list.count()-1 {
+		net_c = pre_list.object(i)		// get netCon object from list
+		net_c.active($1)
+   }
+}   
+
+
+
+proc change_Gsyn() {local i,g
+   if (numarg()<1) { g = Gsyn*f_surf} else { g = $1*f_surf}
+   
+   for i = 0,pre_list.count()-1 {
+    net_c = pre_list.object(i)	// get netCon object from list
+    net_c.weight = g
+   }
+}
+
+proc change_Tau2syn() {
+   if (numarg()<1) {
+		syn.tau2 = Tau2syn
+   } else {
+		syn.tau2 = $1
+   }
+}
+	
+proc change_Imu() {
+   if (numarg()<1) {
+		drv.amp = Imu*f_surf
+   } else {
+		drv.amp = $1*f_surf
+   }
+}
+
+endtemplate Cell
+
+/* ----------------------------------------------------------------------- */
+/* Create the cells   ---------------------------------------------------- */ 
+
+for i = 0, (ncell-1) { 
+	cell[i] = new Cell() }
+
+/* ----------------------------------------------------------------------- */
+/* init random number generators I    ----------------------------------- */ 
+objref rdc, rdg
+
+ropen("/proc/uptime")			// get a seed  that is changing 
+
+if (unix_mac_pc()==1) {	// 1,2,3 for unix, mac, or pc
+  rseed = fscan()				// so simulation will not start with the same seed
+  ropen()			
+} else {
+  rseed =12345
+}
+
+rdc = new Random(rseed)			// use for syn.connections 
+proc new_rdc() { 
+   if (Msyn_r ==0) {
+
+	rdc.discunif(0,ncell-1)		// initialize random distr.
+    } else {
+     rdc.uniform(0,10)
+     old_Msyn=Msyn old_Msyn_r=Msyn_r 
+    }
+}
+
+
+rdg = new Random(rseed)			// gap connectins
+rdg.binomial(1,0.5)
+
+new_rdc()
+
+/* ----------------------------------------------------------------------- */
+/* connections  ---------------------------------------------------------- */
+/* connect all to all reciprocally */ 
+
+proc connect_all2all() {local i,j 	
+   for i = 0, ncell-1 {	
+	for j = 0, ncell-1 { 	
+	 cell[i].connect_pre(cell[j])
+	}
+   }
+ msyn = ncell
+}
+
+proc connect_Msyn() {local i,j,pre	// connect to presyn cells 
+					// in a random pattern  BUT
+	for i = 0,ncell-1 {		// with a fixed number of connections / each cell 
+		j = 0	
+		while (j<Msyn) {
+		
+			pre = int(rdc.repick())	// pick a cell nr.
+						// and if they are not connected...
+			if (cell[i].is_connected(cell[pre]) ==0) {	// then connect them
+					cell[i].connect_pre(cell[pre]) 
+				j += 1
+			}
+		}
+	}
+	msyn = Msyn
+}
+
+objref lt
+lt = new Vector(51)
+for i=0,50 {lt.x[i]=9.9736*exp(i*i/-1152)} // ~gaussian distribution of 
+					// conn. prob. centered around
+					// the cell with an sd of 24
+					// with a mean of ~60/100 cells
+					// (well, actually only ~57)
+
+proc connect_random() {local i,j,c,pre
+   c = 0
+   for i = 0, ncell-1 {		// connect cells in a random fashion 
+   					// connections can be upto the 50th neighbour
+					// 
+		for j = -50,50 { 	
+			if (rdc.repick()<=lt.x[abs(j)]) {
+			   pre=i+j
+			   if (pre<0) {pre=ncell+pre}		// map around the ring
+			   if (pre>=ncell) {pre=pre-ncell}
+			   
+			   cell[i].connect_pre(cell[pre],abs(j)) 
+			   c += 1
+			}
+		}
+   }
+   msyn = c/ncell			// calculate mean number of connections
+}
+
+proc connect_net() {
+
+	if ((Msyn_r) && ((Msyn != old_Msyn) || (Msyn_r != old_Msyn_r))) { new_rdc() }
+
+	if (Msyn == ncell) {		
+		connect_all2all()
+	} else {
+		if (Msyn_r) { connect_random() } else { connect_Msyn() }	
+	}
+}
+
+proc disconnect_net() {local i
+   for i = 0,ncell-1 { 
+     cell[i].disconnect_cell()
+     if (Gaps) { cell[i].disconnect_gaps()}
+     }
+}
+
+
+/* GAPS ------------------------------------------------------------------ */
+
+
+proc connect_gaps() {local i,j,n,pre
+  n = 0
+  for i=0,ncell-1 {
+    for j=1,4 {				// connection can be made upto the 4th neighbour 
+    					// probability 0.5 as defined above for "rdg"
+       pre=i+j
+       if (pre>=ncell) {pre-=ncell}	// map around the ring 
+       if (rdg.repick()) {             
+	  cell[i].connect_gap(cell[pre]) 
+	  cell[pre].connect_gap(cell[i])
+	  n += 1
+       }   
+    }
+  }
+  printf(" - with %d gaps inserted.",n)
+}
+
+
+
+objref APcells,APtimes,Cellvar		// vectors for AP time data
+objref APmx[ncell+1]			// matrix for binned AP data
+binw = 0.2                              // bin width - up to 500 Hz!
+bins = int(tstop/binw)                  // n of bins
+
+
+APcells = new Vector(250*ncell)		// two vectors to store cell_i & time of APs
+APtimes = new Vector(250*ncell)		// assumes a max firing freq of 500Hz!
+APcount = 0
+
+Cellvar = new Vector(ncell)             // to store any variable (eg. Vm) for the cells
+
+
+for i = 0,ncell {
+    APmx[i] = new Vector(bins+1)	// AP matrix - a vaste for bit data
+					// but never mind it should work fast
+}
+
+proc setbin() {local b
+   b = $1
+   if (b<0.2) {b = 0.2}			// do not allow smaller values then 0.2 ms for bin size
+					// this would mean an >500Hz osc. we don't look at that now
+   binw = b				// matrix was sized to this max.
+   bins = int(tstop/binw)
+}
+
+proc AP2mx() {local i
+// form a bin matrix from AP time data vectors 
+
+   for i = 0,ncell {APmx[i].fill(0)}
+    
+   for i = 0,APcount-1 {		
+		APmx[APcells.x[i]].x[int(APtimes.x[i]/binw)] = 1
+		APmx[ncell].x[int(APtimes.x[i]/binw)] += 1
+					// count number of active cells 
+					// for the histogram
+   }
+}
+
+strdef strvar
+objref dfile
+dfile = new File()
+
+
+proc saveAPd() {local i
+	dfile.wopen("out.APs")
+	dfile.printf("#Time (ms)\tCell Nr.\n")
+	for i = 0,APcount-1 {
+		dfile.printf("%f\t%d\n",APtimes.x[i],APcells.x[i])
+	}
+	dfile.close() 
+
+	rtime = stopsw()
+	printf("\n%d:%d -- AP data saved in file %s",rtime/60,rtime%60,strvar)
+}
+
+/* ----------------------------------------------------------------------- */
+/* Init plotting -------------------------------------------------------- */
+/* ----------------------------------------------------------------------- */
+objref v_plt,r_plt,h_plt
+
+proc initvPlt() {local i		// plot voltage traces
+ v_plt = new Graph(0)          		// init Graph object instance
+
+ v_plt.size(tsyn,tsyn+200,-80,40)	// window size
+ v_plt.label(0.95, 0.58, "ms")		// x label
+ v_plt.label(0.01, 0.85, "nS")		// y label
+ v_plt.label(0.01, 0.75, "mV")		// y label
+ v_plt.label(1,0)			// move for next labels out
+ v_plt.view(tsyn, -80, 200, 120, 0, 20, 300, 230)
+
+ for i = 0,ncell-1 {
+   sprint(strvar,"%s%d%s","cell[",i,"].soma.v(0.5)")
+   v_plt.addvar(strvar,i%4+1 ,1)
+   sprint(strvar,"%s%d%s","1000*cell[",i,"].syn.g+30")
+   v_plt.addexpr(strvar,3 ,1)
+ }
+}
+
+
+proc initrPlt() {			// plot raster of APs (cell x time matrix)
+ r_plt = new Graph(0)         	  	// init Graph object instance
+
+ r_plt.size(0,tstop,0,ncell)		// window size
+ r_plt.label(0.95, 0.02, "ms")		// x label
+ r_plt.label(0.01, 0.81, "neuron")	// y label
+ r_plt.view(0,0,tstop, ncell, 320, 20, 300, 230)
+}
+    
+proc inithPlt() {			// plot raster of APs (cell x time matrix)
+ h_plt = new Graph(0)           	// init Graph object instance
+
+ h_plt.size(0,tstop,0,ncell/2)		// window size
+ h_plt.label(0.95, 0.02, "ms")		// x label
+ h_plt.label(0.01, 0.81, "neurons")	// y label
+ h_plt.view(0,0,tstop,.6*ncell/2, 640, 20, 300, 230)
+}
+
+
+proc plotAPs() { local i
+
+   r_plt.erase()	
+
+   for i = 0,APcount-1 {
+     r_plt.mark(APtimes.x[i],APcells.x[i]+1,"o",5)
+   }
+   
+   r_plt.flush()
+   doEvents()
+}
+
+proc plotHist() { local i
+
+   h_plt.erase()	
+   h_plt.beginline
+
+   for i = 0,bins-1 {
+    h_plt
+     h_plt.line(i*binw,APmx[ncell].x[i])
+   }
+   
+   r_plt.flush()
+   doEvents()
+}
+
+initvPlt()
+initrPlt()
+inithPlt()
+
+/* ----------------------------------------------------------------------- */
+/* Run simulation -------------------------------------------------------- */
+/* ----------------------------------------------------------------------- */
+
+/* init random number generators II -------------------------------------- */ 
+objref rdv,rdi,rdd,rdj
+
+ropen("/proc/uptime")		// get a seed
+
+if (unix_mac_pc()==1) {	// 1,2,3 for unix, mac, or pc
+  rseed = fscan()				// so simulation will not start with the same seed
+  ropen()			
+} else {
+  rseed =54321
+}
+rdv = new Random(rseed)		// use for Vm 
+rdv.uniform(-64.99,-65)		// used to be Vms random between -50 -70
+
+rdi = new Random(rseed)		// use for exc.drv
+rdi.normal(Imu,Imu*Imu*Icv*Icv)	//
+old_amp = Imu 
+old_cv = Icv			// to check if amp or sd changed
+
+rdd = new Random(rseed)		// use for delay of drv onset 
+rdd.uniform(0,tdrv)		// set a random delay for exc. drive
+old_tdrv = tdrv
+
+
+proc initNet() {local i
+
+/* -- Cells  --------------------------------------------------------- */
+/* -- init Vm --------------------------------------------------------- */
+	for i = 0,ncell-1 {		
+		cell[i].soma.v = rdv.repick() 
+	}
+
+/* -- Synaptic connections --------------------------------------------- */
+/* -- connections ------------------------------------------------------ */
+
+	disconnect_net()	// reconnect net with new random pattern
+	connect_net()
+				// but deactivate connections for the preRun 
+	
+	for i = 0,ncell-1 {
+		cell[i].change_Gsyn()
+		cell[i].switch_syn(0)
+	} 
+
+/* -- decay tau -------------------------------------------------------- */
+
+	for i = 0,ncell-1 {	// set decay tau
+		cell[i].change_Tau2syn() 
+	} 
+
+/* -- Exc.drive -------------------------------------------------------- */
+/* -- init currents ---------------------------------------------------- */
+	if (tsyn == 0) { tdrv = 0 old_tdrv = tdrv}
+	if (tdrv != 0) {							// randomize onset of exc.drv
+		if (tdrv != old_tdrv) {rdd.uniform(0,tdrv) old_tdrv = tdrv}
+		for i = 0,ncell-1 {		
+			cell[i].drv.del = rdd.repick() 
+		}
+	}
+	
+	if (Icv != 0) {							// random Iexc if Icv != 0
+		for i = 0,ncell-1 {
+			if ((Icv != old_cv) || (Imu != old_amp)) {
+			// if the distr. params are changed initialize a new distribution
+				rdi.normal(Imu,Imu*Imu*Icv*Icv) 
+				old_amp = Imu  old_cv = Icv
+			}
+
+			Cellvar.x[i] = rdi.repick() 
+			cell[i].change_Imu(Cellvar.x[i])
+		}
+		im = Cellvar.mean() 					 // calculate mean and sd of amplitudes
+		icv = Cellvar.stdev()/im
+	} else {
+		if (Imu != old_amp) {
+			for i = 0,ncell-1 {cell[i].change_Imu()} 
+			old_amp = Imu
+		} 
+		im = Imu 
+		icv  = Icv
+	}
+
+
+}
+
+
+
+proc runNet() {local i
+       
+	finitialize()
+	fcurrent()
+
+	v_plt.begin()
+
+	APcount = 0				
+
+
+	while (t<tsyn) {		// initialize network
+		for i = 1,n_step { fadvance() } // make n_step integration steps
+
+		for i = 0,ncell-1 {	// check if any cell fired
+		
+			if ((cell[i].soma.v(0.5) > 0) && (cell[i].old_v < 0)) {
+				APtimes.x[APcount] = t
+				APcells.x[APcount] = i
+				APcount += 1
+			}
+			cell[i].old_v = cell[i].soma.v(0.5)
+		}
+	}
+	
+	for i = 0,ncell-1 {   	// activate connections, set conductance ampl.
+	  cell[i].switch_syn(1)
+	} 
+
+	if (Gaps) { connect_gaps()}
+
+	while (t<tstop) {		// run simulation with connections active
+		for i = 1,n_step { if (t<tstop) {fadvance()}}
+		v_plt.plot(t)		// plot voltage traces
+
+		for i = 0,ncell-1 {	// check if any cell fired
+			if ((cell[i].soma.v(0.5) > 0) && (cell[i].old_v < 0)) {
+				APtimes.x[APcount] = t
+				APcells.x[APcount] = i
+				APcount += 1
+			}
+		cell[i].old_v = cell[i].soma.v(0.5)
+		}
+	}
+
+	v_plt.flush()			// flush Vm plot
+	doEvents()			// do it!  ;-)
+}
+
+
+
+
+/* ----------------------------------------------------------------------- */
+/*	 Main 								  */
+/* ----------------------------------------------------------------------- */
+
+startsw()
+
+
+proc oneRun() {		// one cycle of simulation/analysis
+
+   rtime = stopsw()
+   printf("\n\n%d:%d -- Starting simulation",rtime/60,rtime%60)
+
+   initNet()			// initialize network
+   
+   runNet()			// run simulation
+
+   rtime = stopsw()
+   printf("\n%d:%d -- Finished",rtime/60,rtime%60)
+
+
+/* -- analysis ------------------------------------------------------------ */
+
+   plotAPs()			// make a AP raster plot (time*cells)
+   
+   
+/* -- save data ------------------------------------------------------------ */
+
+   saveAPd()
+}
+
+
+/* ----------------------------------------------------------------------- */
+/* end                                                                    */
+/* ----------------------------------------------------------------------- */

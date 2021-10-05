@@ -1,0 +1,6 @@
+load_file("nrngui.hoc")
+load_file("netring.hoc")
+oneRun()
+AP2mx()
+plotHist()
+

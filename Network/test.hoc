@@ -1,0 +1,232 @@
+
+load_file("nrngui.hoc")
+load_file("custominit.hoc") 
+
+celsius = 31	
+
+   npcell = 200
+   nfscell = 20
+   Msyn = 60 			// convergence & divergence factor
+   Msyn_r = 1			// 1 - assign connections in a true random fashion
+   				// 0 - assign connection with fixed Msyn
+   Gaps = 1			// gaps inserted as default 
+   
+   Imu = 0		// ‘A/cmy - amplitude here as a density
+   Icv = 0.1			// coeff.var. of the current distribution
+
+   Delsyn = 0.5			// ms	- IPSC delay
+			
+   Tau1syn = 0.16 		// ms	- IPSC rise tau
+   Tau2syn = 1.8		// ms	- IPSC decay tau
+
+   Esyn = 0			// mV	- IPSC rev. potential
+
+   Gsyn = 0.1 			// mS/cmy - IPSC conductance density! (per connection)
+   
+   Vrest = -70
+
+objref pcell[npcell]			// the cells of the network
+objref fscell[nfscell]			// the cells of the network
+
+load_file("pc.hoc")
+load_file("fs.hoc")
+
+
+/////////////////////////////////////////////////////////////	test basic connections  ////////////////////////////////////////////////////
+
+objref pcell[2], fscell[2]
+objref apc
+	
+
+proc test_pc_2_fs(){
+	objref pcell[2], fscell[2]
+
+	pcell[0] = new PCell()
+	pcell[1] = new PCell()
+	fscell[0] = new FSCell()
+	fscell[1] = new FSCell()
+
+	access pcell[0].soma
+	apc = new APCount(0.5)
+
+	//fscell[1].connect_pre_exc(pcell[0],1)
+	//pc:0.2-0.4
+	//fs:0.2-0.3
+
+	//load_file("test.ses")
+	load_file("dummy3.ses")
+}
+
+
+
+/////////////////////////////////////////////////////////////	test fs network syncronization  ////////////////////////////////////////////////////
+/*
+tstop = 1000
+objref apc[nfscell], aprec[nfscell], pc_ic_amp, r1, r2, se[nfscell]
+objref randvec[nfscell+1], pc_2_pc, ivecs[nfscell]
+
+pc_2_pc = new Random()
+pc_2_pc.uniform(0,1)
+
+proc test_fs_network(){
+	
+	r1 = new Random()
+	r2 = new Random()
+	r1.uniform(-200, 60)
+	r2.uniform(-140, 50)
+
+	for i = 0, nfscell{
+		randvec[i] = new Vector()
+		
+	}
+
+
+	for i = 0, (nfscell-1) { 
+		fscell[i] = new FSCell()
+		
+		}
+	
+	for i=0, (nfscell-1){
+		
+		
+		access fscell[i].soma
+		se[i] = new SEClamp(.5)
+
+		for k = 0, (tstop/dt/50){
+			rep = r2.repick()
+			//print "repick: ", rep
+			randvec[i].append(rep)
+		}
+
+		randvec[i] = randvec[i].medfltr(100)
+
+		
+		se[i].dur1 = tstop
+		se[i].rs = 20
+		randvec[i].play(&se[i].amp1, dt*50)
+
+		apc[i] = new APCount(0.5)
+		aprec[i] = new Vector()
+		apc[i].record(aprec[i])
+	}
+	
+	if ($1 == 1){
+		for i = 0, (nfscell-1){
+			for k = 0, (nfscell-1){
+				if (i!=k && pc_2_pc.repick < 0.8){
+					fscell[i].connect_pre_inh(fscell[k],1)
+				}
+			}
+		}
+	}
+	load_file("test1.ses")
+	run()
+	
+	for i = 0, (nfscell-1){
+		ivecs[i] = new Vector()
+		for k = 0, (aprec[i].size()-1){
+			ivecs[i].append(i)
+		}
+	}
+	
+}
+
+
+
+test_fs_network(1)
+
+*/
+
+
+/////////////////////////////////////////////////////////////	test pv network syncronization with gap junctions ////////////////////////////////////////////////////
+
+/*
+
+tstop = 1000
+objref apc[nfscell], aprec[nfscell], pc_ic_amp, r1, r2, se[nfscell]
+objref randvec[nfscell+1], pc_2_pc, ivecs[nfscell]
+
+pc_2_pc = new Random()
+pc_2_pc.uniform(0,1)
+
+proc test_fs_gap_network(){
+	
+	r1 = new Random()
+	r2 = new Random()
+	r1.uniform(-200, 60)
+	r2.uniform(-115, 60)
+
+	for i = 0, nfscell{
+		randvec[i] = new Vector()
+		
+	}
+
+
+	for i = 0, (nfscell-1) { 
+		fscell[i] = new FSCell()
+		
+		}
+	
+	for i=0, (nfscell-1){
+		
+		
+		access fscell[i].soma
+		se[i] = new SEClamp(.5)
+
+		for k = 0, (tstop/dt/50){
+			rep = r2.repick()
+			//print "repick: ", rep
+			randvec[i].append(rep)
+		}
+
+		randvec[i] = randvec[i].medfltr(100)
+
+		
+		se[i].dur1 = tstop
+		se[i].rs = 20
+		randvec[i].play(&se[i].amp1, dt*50)
+
+		apc[i] = new APCount(0.5)
+		aprec[i] = new Vector()
+		apc[i].record(aprec[i])
+	}
+	
+	if ($1 == 1){
+		for i = 0, (nfscell-1){
+			for k = 0, (nfscell-1){
+				if (i!=k && pc_2_pc.repick < 0.8){
+					fscell[i].connect_pre_inh(fscell[k],1)
+				}
+			}
+		}
+	}
+	
+	for i = 0, (nfscell-1){
+		for k = 0, (nfscell-1){
+			if (i!=k && pc_2_pc.repick < 0.61){
+				fscell[i].connect_gap(fscell[k],1)
+				fscell[k].connect_gap(fscell[i],1)
+			}
+		}
+	}
+	
+	
+	
+	load_file("test1.ses")
+	run()
+	
+	for i = 0, (nfscell-1){
+		ivecs[i] = new Vector()
+		for k = 0, (aprec[i].size()-1){
+			ivecs[i].append(i)
+		}
+	}
+	
+}
+
+
+
+test_fs_gap_network(1)
+*/
+
+

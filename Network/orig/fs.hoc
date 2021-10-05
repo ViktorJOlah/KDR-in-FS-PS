@@ -1,0 +1,157 @@
+
+begintemplate FSCell
+
+public  soma, old_v, drv, syn_exc, syn_inh,\
+			switch_syn, change_Imu, change_Gsyn, change_Tau2syn,\
+			pre_list, connect_pre_exc, connect_pre_inh, is_connected, disconnect_cell,\
+			connect_gap
+
+public soma
+
+external  	 Tau1syn,Tau2syn,Esyn,\
+			 Delsyn,Gsyn,\
+			 Imu,tstop, lambda_f
+
+objref syn_exc, syn_inh, drv, pre_list, net_c, gaps[200]
+
+create soma
+
+proc init() {
+	soma{
+
+		diam = 20
+		L = 20
+		nseg = int((L/(0.1*lambda_f(5000))+.999)/2)*2 + 1
+		
+		insert pas
+		g_pas = 0.00031818182 * 2
+		e_pas - -75
+		Ra=150
+		cm=3
+		insert hh_mod
+		gl_hh_mod = 0
+		gkbar_hh_mod = 0
+		
+		gnabar_hh_mod = 0.55
+		v_shift_na_hh_mod = 2
+		scale_na_act_hh_mod = 3
+		scale_na_inact_hh_mod = 7
+
+		insert kdr
+		gbar_kdr = 0.1
+		
+		//insert na
+		
+		ek = -70
+		ena = 55
+		v_init = -70
+
+		celsius = 31
+		
+		syn_exc = new Exp2Syn(0.5)
+		
+		syn_exc.tau1 = Tau1syn
+		syn_exc.tau2 = Tau2syn
+		syn_exc.e = Esyn
+		
+		// postsynaptic current 
+		syn_inh = new Exp2Syn(0.5)
+		
+		syn_inh.tau1 = Tau1syn
+		syn_inh.tau2 = Tau2syn
+		syn_inh.e = -90
+		
+		for i=0,199 { 
+	        // define all the "hemi"gaps that may be needed
+		// "link" inactive gaps  to the same soma so that dV=0 and there is no current flow 
+		// this is not really nice and clean way 
+		// but in view of Neuron's clumsy memory handling this seems to be the 
+		// best way to dynamically connect/disconnect gaps over hundreds of simulations
+	    
+		    gaps[i] = new gap(0.5) 
+		    gaps[i].r = 2000 // Mohm resistance corresponding to 0.01 nS conductance
+					// that correspondes to 1nS for a cells of ~10000 ‘my surface  
+					// order of magn. that was measured experimentally 
+					// ** 0.01 mS/cmy
+		  
+		    setpointer gaps[i].vgap,v(0.5)
+		}
+		n_gaps=0
+	}
+	
+	
+}
+
+proc connect_gap() {
+// $o1 arg is the other Cell
+     n_gaps +=1
+    setpointer gaps[n_gaps-1].vgap, $o1.soma.v(0.5)
+}
+
+
+proc connect_pre_exc() {local f, axdel
+// $o1 arg is the **PREsynaptic** Cell
+
+   axdel=$2*0.2        // in ms distance between cells 50 um
+                       // assuming AP propagation  .25 m/s => 0.2 ms for one interval
+				   
+
+   $o1.soma pre_list.append( new NetCon(&v(1),syn_exc,0,Delsyn+axdel,0.00017))		//constrained
+	// the last argument is the 'weight' initialized to 0
+	// a range of [0-1] where 1 corresponds to 1 ‘S peak 
+	// conversion: 'Gsyn' [mS/cmy] to 'weight' [‘S] using the factor 'fsurf' derived from the 
+	// surface area [‘my] and the conversion of the units
+}
+
+proc connect_pre_inh() {local f, axdel
+// $o1 arg is the **PREsynaptic** Cell
+
+   axdel=$2*0.2         
+
+   $o1.soma pre_list.append( new NetCon(&v(1),syn_inh,0,Delsyn+axdel,0.01))		//constrained but not exactly
+}
+
+proc disconnect_cell() {
+   pre_list.remove_all()
+}
+
+
+func is_connected() {local i,c			// check if connected
+   c = 0
+   for i = 0,pre_list.count()-1 {
+		net_c = pre_list.object(i)		// get netCon object from list
+		if ($o1 == net_c.precell()) {c=1}
+   }
+   return c
+}   
+
+proc switch_syn() {local i			// activate syn.connections
+   for i = 0,pre_list.count()-1 {
+		net_c = pre_list.object(i)		// get netCon object from list
+		net_c.active($1)
+   }
+}   
+
+proc change_Tau2syn() {
+   if (numarg()<1) {
+		syn_exc.tau2 = Tau2syn
+   } else {
+		syn_exc.tau2 = $1
+   }
+}
+	
+proc change_Imu() {
+   if (numarg()<1) {
+		drv.amp = Imu*f_surf
+   } else {
+		drv.amp = $1*f_surf
+   }
+}
+
+
+endtemplate FSCell
+
+
+
+
+

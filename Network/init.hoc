@@ -1,0 +1,69 @@
+load_file("nrngui.hoc")
+
+
+create soma//, ax1, ais, ax2
+soma.diam = 20
+soma.L = 20
+/*
+ax1.L = 10
+ax1.diam = 1
+ais.L = 10
+ais.diam = 1
+ax2.L = 1000
+ax2.diam = 1
+
+#connect soma(0), ax1(1)
+#connect ax1(0), ais(1)
+#connect ais(0), ax2(1)
+*/
+forall { nseg = int((L/(0.1*lambda_f(5000))+.999)/2)*2 + 1  }
+
+
+access soma
+
+forall{
+	
+	insert pas
+	g_pas = 0.00031818182
+	Ra=150
+	cm=1
+	insert hh_mod
+	gl_hh_mod = 0
+	gnabar_hh_mod = 0.3
+	gkbar_hh_mod = 0
+	
+	gnabar_hh_mod = 0.3
+	gnabar_hh_mod *= 1.44
+	v_shift_na_hh_mod = 13
+	scale_na_act_hh_mod = 5
+	scale_na_inact_hh_mod = 8
+
+	insert kdr
+	
+	//insert na
+	
+	ena = 70
+	ek = -93
+}
+v_init = -70
+
+celsius = 31
+
+
+
+ek = -70
+ena = 55
+shiftna = 2
+c_m = 3
+cond_pas = 0.00031818182 * 2
+rev_pas = -75
+inactna = 7
+actna = 3
+gna = 0.55
+gk = 0.1
+
+
+
+
+
+
