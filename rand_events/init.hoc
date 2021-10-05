@@ -1,0 +1,186 @@
+load_file("nrngui.hoc")
+
+
+create soma//, ax1, ais, ax2
+soma.diam = 20
+soma.L = 20
+/*
+ax1.L = 10
+ax1.diam = 1
+ais.L = 10
+ais.diam = 1
+ax2.L = 1000
+ax2.diam = 1
+
+#connect soma(0), ax1(1)
+#connect ax1(0), ais(1)
+#connect ais(0), ax2(1)
+*/
+forall { nseg = int((L/(0.1*lambda_f(5000))+.999)/2)*2 + 1  }
+
+
+access soma
+
+forall{
+	
+	insert pas
+	g_pas = 0.00031818182
+	Ra=150
+	cm=1
+	insert hh_mod
+	gl_hh_mod = 0
+	gnabar_hh_mod = 0.3
+	gkbar_hh_mod = 0
+	
+	gnabar_hh_mod = 0.3
+	gnabar_hh_mod *= 1.44
+	v_shift_na_hh_mod = 13
+	scale_na_act_hh_mod = 5
+	scale_na_inact_hh_mod = 8
+
+	insert kdr
+	
+	//insert na
+	
+	ena = 70
+	ek = -93
+}
+v_init = -70
+
+celsius = 31
+
+load_file("custominit.hoc")
+
+objref apc
+apc = new APCount(0.5)
+
+
+//load_file("mrf1.ses")
+//load_file("short.ses")
+load_file("events.ses")
+
+
+
+objref vecrec, vecy101, vecderiv
+vecy101 = new Vector()
+vecderiv = new Vector()
+vecrec = new Vector()
+vecrec.record(&soma.v(0.5))
+
+
+start = 2/0.005
+
+proc going(){
+    vecy101.resize(0)
+
+	
+	run()
+    vecy101 = vecrec.cl()
+
+    ////////calculate stuff
+
+
+    vecderiv.deriv(vecy101, 0.005)
+	dvdtmax = vecderiv.max(int (start + (0.04 / 0.005)), int(start + (2.9 / 0.005)))
+	vecderiv.medfltr(20)
+    //dvdtmax = vecderiv.max(int(2.628/0.004), int(5.9/0.004))
+
+    peak = vecy101.max(int (start + (0.04 / 0.005)), int(start + (2.9 / 0.005)))
+    peakind = vecy101.max_ind(int (start + (0.04 / 0.005)), int(start + (2.9 / 0.005)))
+
+
+    for i=int (start + (0.04 / 0.005)), int(start + (2.9 / 0.005)){
+        if(vecderiv.x[i] > 50){
+            here1 = i
+            break
+        }
+    }
+
+    thresh = vecy101.x[here1]
+	
+	//thresh = -35
+
+    for i=(start + (0.04/0.005)),peakind{
+        if(vecy101.x[i] > ((peak-thresh)/2+thresh)){
+            hw1 = i
+            break
+        }
+    }
+
+    for i=peakind, vecy101.size()-1{
+        if(vecy101.x[i] < vecy101.x[hw1]){
+            hw2 = i
+            break
+        }
+    }
+	
+	ahp = vecy101.min(peakind,int(peakind+2/0.005))
+
+    hw11 = (hw2-hw1)*0.005
+	
+	depolblock = 0
+
+    print gk, gna, vshift_kdr, dvdtmax, peak-thresh, thresh, hw11, thresh-ahp
+    //print gnabar_hh_mod, dvdtmax, peak, thresh, hw11, here1*0.005
+
+}
+
+objref apc
+apc = new APCount(0.5)
+
+
+
+ek = -70
+ena = 55
+shiftna = 2
+c_m = 3
+cond_pas = 0.00031818182 * 2
+rev_pas = -75
+inactna = 7
+actna = 3
+gna = 0.55
+gk = 0.1
+
+
+
+
+objref exc[100000], inh[1000000], r_time
+
+r_time = new Random(4000)
+r_time.uniform(0,1000)
+
+proc go(){
+	for i=0,1000{
+		exc[i] = new AlphaSynapse(.5)
+		inh[i] = new AlphaSynapse(.5)
+		exc[i].e = 0
+		exc[i].gmax = 0.0005
+		exc[i].onset = r_time.repick()
+		exc[i].tau = 2
+	}
+	for i=0,400{
+		inh[i].e = -90
+		inh[i].gmax = 0.002
+		inh[i].onset = r_time.repick()
+		inh[i].tau = 2		
+
+	}
+	run()
+}
+
+//go()
+
+for l=0,10{
+	go()
+	for j=-10,20{
+		vshift_kdr = j
+		run()
+		print vshift_kdr, apc.n
+
+	}
+}
+
+
+
+
+

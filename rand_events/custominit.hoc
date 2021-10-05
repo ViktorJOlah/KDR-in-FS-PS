@@ -1,0 +1,60 @@
+INITDUR = 30	//350
+tstop = 6
+
+forall { nseg = int((L/(0.1*lambda_f(5000))+.999)/2)*2 + 1  }
+
+//define pseudo-variables
+
+c_m = 1
+cond_pas = 0.00031818182
+rev_pas = -70
+	
+gna = 0.4
+shiftna = 13
+actna = 5
+inactna = 8
+	
+gk = 0.0504
+
+
+proc set_params(){
+
+	cm=c_m
+	g_pas=cond_pas
+	e_pas=rev_pas
+	
+	gnabar_hh_mod = gna
+	v_shift_na_hh_mod = shiftna
+	scale_na_act_hh_mod = actna
+	scale_na_inact_hh_mod = inactna
+	
+	gbar_kdr = gk
+}
+
+
+proc init() { local temp
+
+	set_params()
+
+{dt = 0.05}
+  finitialize(v_init)
+  t = -2*INITDUR // jump to a time "before" 0
+  temp = cvode.active()
+  if (temp != 0) { // if cvode is on, turn it off
+    cvode.active(0)
+    {dt = 0.05}
+  }
+  while (t < -INITDUR) {
+    fadvance()
+  }
+  if (temp != 0) { cvode.active(1) } // turn cvode back on if necessary
+  t = 0
+  {dt = 0.005}
+  if (cvode.active()) {
+    cvode.re_init()
+  } else {
+    fcurrent()
+  }
+  frecord_init()
+  //if (fitID==1){print printer, gNa, gK, vsNa, vsK, scK, scNa, Rrest, ParmFitnessGui[0].pf.errval}
+}
